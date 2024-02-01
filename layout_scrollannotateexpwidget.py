@@ -40,6 +40,7 @@ class ScrollAnnotateExpWindow(QtWidgets.QMainWindow):
         self.workingDataPkgDirDisplay = workingDataPkgDirDisplay
         self.workingDataPkgDir = workingDataPkgDir
         self.mode = mode
+        self.schemaVersion = schema_experiment_tracker["version"]
         self.initUI()
 
     def initUI(self):
@@ -62,6 +63,7 @@ class ScrollAnnotateExpWindow(QtWidgets.QMainWindow):
         self.form = self.builder.create_form(self.ui_schema)
         
         self.formDefaultState = {
+            "schemaVersion": self.schemaVersion,
             "experimentId": "exp-1",
             "experimentName": "default-experiment-name"
         }
@@ -737,23 +739,25 @@ class ScrollAnnotateExpWindow(QtWidgets.QMainWindow):
                     restrk_m_datetime = datetime.datetime.fromtimestamp(restrk_m_timestamp).strftime("%Y-%m-%d, %H:%M:%S")
                     print("restrk_m_datetime: ", restrk_m_datetime)
 
-                    add_to_df_dict = {#"resultId":[resource_id],
-                                    "experimentIdNumber": [int(IdNumStr)],  
-                                    #"annotationCreateDateTime": [restrk_c_datetime],
-                                    #"annotationModDateTime": [restrk_m_datetime],
-                                    "annotationModTimeStamp": [restrk_m_timestamp]}
+                    # add_to_df_dict = {#"resultId":[resource_id],
+                    #                 "experimentIdNumber": [int(IdNumStr)],  
+                    #                 #"annotationCreateDateTime": [restrk_c_datetime],
+                    #                 #"annotationModDateTime": [restrk_m_datetime],
+                    #                 "annotationModTimeStamp": [restrk_m_timestamp]}
 
 
-                    add_to_df = pd.DataFrame(add_to_df_dict)
+                    # add_to_df = pd.DataFrame(add_to_df_dict)
 
                     # convert json to pd df
                     df = pd.json_normalize(data) # df is a one row dataframe
                     print(df)
                     df["annotationCreateDateTime"][0] = restrk_c_datetime
                     df["annotationModDateTime"][0] = restrk_m_datetime
+                    df["experimentIdNumber"][0] = int(IdNumStr)
+                    df["annotationModTimeStamp"] = restrk_m_timestamp
                     print(df)
-                    df = pd.concat([df,add_to_df], axis = 1) # concatenate cols to df; still a one row dataframe
-                    print(df)
+                    # df = pd.concat([df,add_to_df], axis = 1) # concatenate cols to df; still a one row dataframe
+                    # print(df)
 
                     collect_df = pd.concat([collect_df,df], axis=0) # add this files data to the dataframe that will collect data across all valid data files
                     print("collect_df rows: ", collect_df.shape[0])
@@ -908,23 +912,41 @@ class ScrollAnnotateExpWindow(QtWidgets.QMainWindow):
 
         # ifileName, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select the Result Txt Data file you want to edit",
         #        (QtCore.QDir.homePath()), "Text (*.txt)")
+        if self.mode == "edit":
+            textBit = "edit"
+            textButton = "\"Edit an existing experiment\""
+        elif self.mode == "add-based-on":
+            textBit = "base a new experiment upon"
+            textButton = "\"Add a new experiment based on an existing experiment\""
 
-        ifileName, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select the Experiment txt file you want to edit",
-               self.saveFolderPath, "Text (*.txt)")
+        
+        ifileName, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select the Experiment txt file you want to " + textBit,
+            self.saveFolderPath, "Text (*.txt)")
 
         if not ifileName: 
-            messageText = "<br>You have not selected a file to edit. Close this form now. If you still want to edit an existing experiment, Navigate to the \"Experiment Tracker\" tab >> \"Add Experiment\" sub-tab and click the \"Edit and existing experiment\" push-button."
+            messageText = "<br>You have not selected a file to " + textBit + ". Close this form now. If you still want to " + textBit + " an existing experiment, Navigate to the \"Experiment Tracker\" tab >> \"Add Experiment\" sub-tab and click the " + textButton + " push-button."
             saveFormat = '<span style="color:red;">{}</span>'
             self.userMessageBox.append(saveFormat.format(messageText)) 
         else: 
             #self.editMode = True
-                     
-            self.saveFilePath = ifileName
-            print("saveFilePath: ", self.saveFilePath)
+            # if self.mode == "edit":         
+            #     self.saveFilePath = ifileName
+            #     print("setting saveFilePath to path of chosen file")
+            
+            #print("saveFilePath: ", self.saveFilePath)
             print(Path(ifileName).parent)
             print(Path(self.saveFolderPath))
 
-            # if user selects a result txt file that is not in the working data pkg dir, return w informative message
+            # add check on if filename starts with exp-trk-exp?
+            if not Path(ifileName).stem.startswith("exp-trk-exp-"):
+                messageText = "<br>The file you selected may not be an experiment txt file - an experiment txt file will have a name that starts with \"exp-trk-exp-\" followed by a number which is that experiment's ID number. You must select an experiment txt file that is in your working Data Package Directory to proceed. <br><br> To proceed, close this form and return to the main DSC Data Packaging Tool window."
+                saveFormat = '<span style="color:red;">{}</span>'
+                self.userMessageBox.append(saveFormat.format(messageText))
+                return
+
+            # add check on if valid exp-trk file?
+
+            # if user selects a exp txt file that is not in the working data pkg dir, return w informative message
             if Path(self.saveFolderPath) != Path(ifileName).parent:
                 messageText = "<br>You selected an experiment txt file that is not in your working Data Package Directory; You must select an experiment txt file that is in your working Data Package Directory to proceed. If you need to change your working Data Package Directory, head to the \"Data Package\" tab >> \"Create or Continue Data Package\" sub-tab to set a new working Data Package Directory. <br><br> To proceed, close this form and return to the main DSC Data Packaging Tool window."
                 saveFormat = '<span style="color:red;">{}</span>'
@@ -936,23 +958,54 @@ class ScrollAnnotateExpWindow(QtWidgets.QMainWindow):
             
             with open(ifileName, 'r') as stream:
                 data = load(stream)
+                print(data)
 
-            self.annotation_id = data["experimentId"]
-            self.annotationIdNum = int(self.annotation_id.split("-")[1])
-            self.annotationFileName = 'exp-trk-'+ self.annotation_id + '.txt'
-            #self.saveFilePath = os.path.join(self.saveFolderPath,self.resultFileName)
+            if self.mode == "add-based-on":
+                based_on_annotation_id = data["experimentId"]
 
-            # make sure an archive folder exists, if not create it
-            if not os.path.exists(os.path.join(self.saveFolderPath,"archive")):
-                os.makedirs(os.path.join(self.saveFolderPath,"archive"))
 
-            # move the experiment annotation file user opened for editing to archive folder
-            os.rename(ifileName,os.path.join(self.saveFolderPath,"archive",self.annotationFileName))
-            messageText = "<br>Your original experiment annotation file has been archived at:<br>" + os.path.join(self.saveFolderPath,"archive",self.annotationFileName) + "<br><br>"
-            saveFormat = '<span style="color:blue;">{}</span>'
-            self.userMessageBox.append(saveFormat.format(messageText))
+            if self.mode == "edit":         
+                self.saveFilePath = ifileName # is this necessary?
+                print("setting saveFilePath to path of chosen file")
+
+                self.annotation_id = data["experimentId"]
+                self.annotationIdNum = int(self.annotation_id.split("-")[1])
+                self.annotationFileName = 'exp-trk-'+ self.annotation_id + '.txt'
+                #self.saveFilePath = os.path.join(self.saveFolderPath,self.resultFileName)
+
+                archiveFileStartsWith = Path(ifileName).stem + "-"
+                print("archiveFileStartsWith: ",archiveFileStartsWith)
+
+                # make sure an archive folder exists, if not create it
+                if not os.path.exists(os.path.join(self.saveFolderPath,"archive")):
+                    os.makedirs(os.path.join(self.saveFolderPath,"archive"))
+                    # if an archive folder does not yet exist prior to this, then this will 
+                    # necessarily be the first time the user is editing an annotation file
+                    self.annotationArchiveFileNameNumber = 1
+                    #self.annotationArchiveFileName = 'exp-trk-'+ self.annotation_id + '-0' + '.txt'
+                else: 
+                    print("checking if at least one archived version/file for this annotation txt file already exists; getting next available archive id")
+                    # check for files that start with stem of ifileName
+                    # get the string that follows the last hyphen in the stem of those files, convert that string to number
+                    # get highest number, add 1 to that number
+                    self.annotationArchiveFileNameNumber = dsc_pkg_utils.get_id(self=self, prefix=archiveFileStartsWith, folderPath=os.path.join(self.saveFolderPath,"archive"), firstIdNum=1)
+                
+                #self.annotationArchiveFileName = 'exp-trk-'+ self.annotation_id + '-' + str(self.annotationArchiveFileNameNumber) + '.txt'    
+                self.annotationArchiveFileName = archiveFileStartsWith + str(self.annotationArchiveFileNameNumber) + '.txt'    
+
+                # move the experiment annotation file user opened for editing to archive folder
+                os.rename(ifileName,os.path.join(self.saveFolderPath,"archive",self.annotationArchiveFileName))
+                messageText = "<br>Your original experiment annotation file has been archived at:<br>" + os.path.join(self.saveFolderPath,"archive",self.annotationArchiveFileName) + "<br><br>"
+                saveFormat = '<span style="color:blue;">{}</span>'
+                self.userMessageBox.append(saveFormat.format(messageText))
 
             self.form.widget.state = data
+
+            if self.mode == "add-based-on":
+                self.get_id()
+                messageText = "<br>Your new experiment has been initialized based on information you entered for " + based_on_annotation_id + "<br><br>"
+                saveFormat = '<span style="color:blue;">{}</span>'
+                self.userMessageBox.append(saveFormat.format(messageText))
 
             # if len(data["associatedFileDependsOn"]) > 2: 
             #     self.lstbox_view2.addItems(data["associatedFileDependsOn"])

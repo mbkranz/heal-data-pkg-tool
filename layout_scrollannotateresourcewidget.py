@@ -9,7 +9,8 @@ from pyqtschema.builder import WidgetBuilder
 
 #from schema_resource_tracker import schema_resource_tracker
 #from form_schema_resource_tracker import form_schema_resource_tracker
-from schema_resource_tracker import form_schema_resource_tracker, schema_resource_tracker
+#from schema_resource_tracker import form_schema_resource_tracker, schema_resource_tracker
+from schema_resource_tracker import schema_resource_tracker
 from dsc_pkg_utils import qt_object_properties, get_multi_like_file_descriptions
 import pandas as pd
 import dsc_pkg_utils
@@ -34,12 +35,20 @@ from jsonschema import validate
 from healdata_utils.validators.jsonschema import validate_against_jsonschema
 
 class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
-    def __init__(self, workingDataPkgDirDisplay, workingDataPkgDir, mode = "add", *args, **kwargs):
+    def __init__(self, workingDataPkgDirDisplay, workingDataPkgDir, mode = "add", formSetState = {}, annotationMode = "standard", *args, **kwargs):
         super().__init__(*args, **kwargs)
         #self.setWindowTitle("Annotate Resource")
         self.workingDataPkgDirDisplay = workingDataPkgDirDisplay
         self.workingDataPkgDir = workingDataPkgDir
         self.mode = mode
+        self.formSetState = formSetState
+        if self.formSetState:
+            self.resetForFormSetState = True
+        else:
+            self.resetForFormSetState = False
+        self.annotationMode = annotationMode
+        self.schemaVersion = schema_resource_tracker["version"]
+        self.loadingFormDataFromFile = False
         self.initUI()
         #self.load_file()
 
@@ -74,12 +83,23 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
         self.form = self.builder.create_form(self.ui_schema)
         
         self.formDefaultState = {
+            "schemaVersion": self.schemaVersion,
             "resourceId": "resource-1",
             "experimentNameBelongsTo": "default-experiment-name",
             #"expBelongsTo": "exp-999",
             "accessDate": "2099-01-01"
         }
 
+        print(self.formDefaultState)
+        # by default self.formSetState will be an empty dict, also equal to None, so this will not be enacted
+        # if a dict is passed in the formSetState param to scroll annotate resource widge, this will be enacted
+        # it will merge the dict passes as param with the hard coded default dict, overwriting key value 
+        # pairs in the hard coded default dict with dict passed as param if there are overlapping keys
+        if self.formSetState:
+            print(self.formSetState)
+            self.formDefaultState = {**self.formDefaultState, **self.formSetState}
+            print(self.formDefaultState)
+             
         self.form.widget.state = deepcopy(self.formDefaultState)
       
         # # create 'add dsc data pkg directory' button
@@ -161,7 +181,7 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
         # create drag and drop window for multiple file dependencies addition
         self.lstbox_view2 = ListboxWidget(self)
         self.lwModel2 = self.lstbox_view2.model()
-        self.items2 = []
+        self.items2 = [] # this will hold the values in the listbox widget
         self.programmaticListUpdate2 = False
         self.lwModel2.rowsInserted.connect(self.get_items_list2)
         self.lwModel2.rowsRemoved.connect(self.get_items_list2)
@@ -172,8 +192,9 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
         self.add_tooltip()
         self.add_priority_highlight_and_hide()
         self.add_dir()
-        if self.mode == "add":
-            self.get_id()
+        if not self.resetForFormSetState:
+            if self.mode == "add":
+                self.get_id()
         #self.add_priority_highlight()
         #self.initial_hide()
         self.popFormField = []
@@ -233,6 +254,15 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
         #self.show()
         #if self.editState: 
         #    self.load_file
+        if self.resetForFormSetState:
+            self.clear_form(resetForFormSetState=self.resetForFormSetState)
+            # this will engage the connected functions for fields and so will 
+            # hide/show appropriate fields (was not doing this before because form set state
+            # values were added before functions for fields were connected)
+            # this will also get the resource id (don't get it above if a formsetstate param has been passed
+            # so that we don't run get id fx twice and print the message twice which is inefficient and 
+            # confusing for users)
+
 
         return
         
@@ -354,6 +384,13 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
                     labelWidget.hide()
                     widget.hide()
 
+                # if annotationMode is minimal and hide-minimal in priority text content then hide the widget and its label
+                if self.annotationMode == "minimal":
+                    if "hide-minimal" in priorityContent:
+                        labelWidget.hide()
+                        widget.hide()
+
+
    
     def check_tooltip(self):
         i = 0
@@ -376,6 +413,7 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
         indices = [i for i, x in enumerate(self.priorityContentList) if keyText in x.split(", ")]
         print(indices)
         for i in indices:
+
             labelW = self.formLabelWidgetList[i]
             print(labelW)
             labelWType = self.formLabelWidgetTypeList[i]
@@ -388,8 +426,13 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
             print(fieldWName)
 
             if desiredToggleState == "show":
-                labelW.show()
-                fieldW.show()
+                if self.annotationMode == "standard":
+                    labelW.show()
+                    fieldW.show()
+                elif self.annotationMode == "minimal":
+                    if "hide-minimal" not in self.priorityContentList[i]:
+                        labelW.show()
+                        fieldW.show()
             
             if desiredToggleState == "hide":
                 labelW.hide()
@@ -399,94 +442,113 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
 
         #if changedFieldName == "category":
 
-        # reminder to add dd if tabular data; reminder to add result tracker if multi-result 
+        # reminder to add dd if tabular data; reminder to add result tracker if publication
+        # if results tracker, read in and try to get result dependencies
+        
+        # DO NOT do these items if loading from file (i.e. user is editing an existing annotation or adding a new annotation based on existing) 
+        if not self.loadingFormDataFromFile:
 
-        if self.form.widget.state["category"] == "tabular-data":
-            messageText = "<br>You have indicated your resource is a tabular data resource. Please ensure that you add a data dictionary for this tabular data resource in the Associated Data Dictionary field in the form below. A HEAL formatted data dictionary is highly preferred. If you don't already have a HEAL formatted data dictionary, you can easily create one directly from your tabular data file by visiting the Data Dictionary tab of the DSC Packaging Desktop application. You can leave this form open, visit the Data Dictionary tab to create and save your HEAL formatted data dictionary, and then return to this form to add the data dictionary you created."
-            errorFormat = '<span style="color:blue;">{}</span>'
-            self.userMessageBox.append(errorFormat.format(messageText))
-
-        if self.form.widget.state["category"] == "multi-result":
-            messageText = "<br>You have indicated your resource is a multi-result resource. Please ensure that you add a result tracker for this multi-result resource in the Associated Result Tracker field in the form below. A result tracker is a HEAL formatted file to track all results in a multi-result file, along with the data and other supporting files that underly each result. If you don't already have a HEAL formatted result tracker, you can easily create one by visiting the Result Tracker tab of the DSC Packaging Desktop application. You can leave this form open, visit the Result Tracker tab to create and save your HEAL formatted result tracker, and then return to this form to add the result tracker you created."
-            errorFormat = '<span style="color:blue;">{}</span>'
-            self.userMessageBox.append(errorFormat.format(messageText))
-
-        if self.form.widget.state["category"] == "metadata":
-            if self.form.widget.state["categorySubMetadata"] == "heal-formatted-results-tracker":
-                messageText = "<br>You have indicated your resource is a HEAL formatted Results Tracker. The Associated Files/Dependencies field in this form has been hidden from view because this field cannot be used to add file dependencies for a Results Tracker file. If your Result Tracker is correctly formatted, and you have provided file dependencies for each result listed in the results tracker, file dependencies will be pulled in directly from the Results Tracker."
+            if self.form.widget.state["category"] == "tabular-data":
+                messageText = "<br>You have indicated your resource is a tabular data resource. Please ensure that you add a data dictionary for this tabular data resource in the Associated Data Dictionary field in the form below. A HEAL formatted data dictionary is highly preferred. If you don't already have a HEAL formatted data dictionary, you can easily create one directly from your tabular data file by visiting the Data Dictionary tab of the DSC Packaging Desktop application. You can leave this form open, visit the Data Dictionary tab to create and save your HEAL formatted data dictionary, and then return to this form to add the data dictionary you created."
                 errorFormat = '<span style="color:blue;">{}</span>'
                 self.userMessageBox.append(errorFormat.format(messageText))
 
-                if not self.form.widget.state["path"]:
-                    messageText = "<br>Please use the Resource File Path field in the form to browse to your Results Tracker file."
+            if self.form.widget.state["category"] == "publication":
+                messageText = "<br>You have indicated your resource is a publication resource. Please ensure that you add a results tracker for this publication resource in the Associated Results Tracker field in the form below. A results tracker is a HEAL formatted standard data package metadata file to track all results in a publication, along with the data and other supporting files that underly each result. If you don't already have a HEAL formatted results tracker, you can easily create one by visiting the Results Tracker tab of the DSC Data Packaging Desktop Tool. You can leave this form open, visit the Results Tracker tab to create and save your HEAL formatted results tracker, and then return to this form to add the results tracker you created."
+                errorFormat = '<span style="color:blue;">{}</span>'
+                self.userMessageBox.append(errorFormat.format(messageText))
+
+            if self.form.widget.state["category"] == "metadata":
+                if self.form.widget.state["categorySubMetadata"] == "heal-formatted-results-tracker":
+                    messageText = "<br>You have indicated your resource is a HEAL formatted Results Tracker. The Associated Files/Dependencies field in this form has been hidden from view because this field cannot be used to add file dependencies for a Results Tracker file. If your Result Tracker is correctly formatted, and you have provided file dependencies for each result listed in the results tracker, file dependencies will be pulled in directly from the Results Tracker."
                     errorFormat = '<span style="color:blue;">{}</span>'
                     self.userMessageBox.append(errorFormat.format(messageText))
 
-                if self.form.widget.state["path"]:
-                    pathStem = Path(self.form.widget.state["path"]).stem
-                    if not pathStem.startswith("heal-csv-results-tracker"):
-                        messageText = "<br>The resource file path you have added to the Resource File Path field in the form does not appear to be a HEAL formatted results tracker, or the tracker has been re-named. Please ensure that you have added a HEAL formatted Results Tracker to the Resource File Path field in the form, and that the Results tracker name follows the naming convention: heal-csv-results-tracker-(name of multi-result file with which the results tracker is associated)."
-                        errorFormat = '<span style="color:red;">{}</span>'
+                    if not self.form.widget.state["path"]:
+                        messageText = "<br>Please use the Resource File Path field in the form to browse to your Results Tracker file."
+                        errorFormat = '<span style="color:blue;">{}</span>'
                         self.userMessageBox.append(errorFormat.format(messageText))
-                    else: 
-                        # formally validate the results tracker here?
-                        self.popFormField = []
 
-                        messageText = "<br>The resource file path you have added to the Resource File Path field in the form appears to be a HEAL formatted results tracker. Attempting to extract file dependencies for each result in the results tracker now."
-                        errorFormat = '<span style="color:green;">{}</span>'
-                        self.userMessageBox.append(errorFormat.format(messageText))
-                       
-                        resultsTrk = pd.read_csv(self.form.widget.state["path"])
-                        resultIds = resultsTrk["resultId"].tolist()
-
-                        if resultIds:
-                            resultIdDependencies = resultsTrk["associatedFileDependsOn"].tolist()
-
-                            
-                            
-                            popFormField = [{"resultId": rId, "resultIdDependsOn": rIdD.strip("][").split(", ")} for rId,rIdD in zip(resultIds,resultIdDependencies)]
-                            print("popFormField: ", popFormField)
-
-                            messageText = "<br>Extracted file dependencies for each result in the results tracker are as follows:<br><br>"
-                            #errorFormat = '<span style="color:green;">{}</span>'
-                            #self.userMessageBox.append(errorFormat.format(messageText))
-                            self.userMessageBox.append(messageText)
-
-                            emptyDependencies = []
-                            formatDependencies = []
-                            for i, list_item in enumerate(popFormField):
-                                self.userMessageBox.append(f"{i + 1}. ")
-                                for j, key in enumerate(list_item.keys()):
-                                    self.userMessageBox.append(f"{key}:{list_item[key]}{'' if j == len(list_item) - 1 else ', '}")
-                                    if key == "resultId":
-                                        resultId = list_item[key]
-                                    if key == "resultIdDependsOn":
-                                        if not list_item[key]:
-                                            emptyDependencies.append(resultId)
-                                            print("emptyDependencies: ",emptyDependencies)
-                                            formatDependencies.append([])
-                                        else:
-                                            formatDependencies.append([item.replace("'", '') for item in list_item[key]])
-                                            
-                                self.userMessageBox.append("")
-
-                            self.popFormField = [{"resultId": rId, "resultIdDependsOn": rIdD} for rId,rIdD in zip(resultIds,formatDependencies)]
-                            print("popFormField_format: ", self.popFormField)
-
-                            if emptyDependencies:
-                                messageText = "<br>The following result IDs listed in the Results Tracker did not have any file dependencies listed:<br>" + ", ".join(emptyDependencies) + "<br><br>Please review your results tracker and add file dependencies for each result as appropriate, then come back and re-add the results tracker as a resource.<br><br>"
-                                errorFormat = '<span style="color:red;">{}</span>'
-                                self.userMessageBox.append(errorFormat.format(messageText))
-
-                            #self.form.widget.state = {
-                            #    "associatedFileResultsDependOn": popFormField
-                            #}
-                        
-                        else: 
-                            messageText = "<br>There do not appear to be any results listed in the Results Tracker. Please add at least one result to your Results Tracker by navigating to the Add Results sub-tab of the Results Tracker tab. If you have already annotated your result(s), use the Add result or Auto-add result button to add your result files to your Result Tracker. If you need to annotate your result(s), start by clicking the Annotate Result button, fill out the brief form that appears to annotate your result(s), use the Add or Auto-add Result button(s) to add your result file(s) to your Results Tracker, then come back here to re-add your Results Tracker as a resource.<br>"
+                    if self.form.widget.state["path"]:
+                        pathStem = Path(self.form.widget.state["path"]).stem
+                        if not pathStem.startswith("heal-csv-results-tracker"):
+                            messageText = "<br>The resource file path you have added to the Resource File Path field in the form does not appear to be a HEAL formatted results tracker, or the tracker has been re-named. Please ensure that you have added a HEAL formatted Results Tracker to the Resource File Path field in the form, and that the Results tracker name follows the naming convention: heal-csv-results-tracker-(name of publication file with which the results tracker is associated)."
                             errorFormat = '<span style="color:red;">{}</span>'
                             self.userMessageBox.append(errorFormat.format(messageText))
+                        else: 
+                            # formally validate the results tracker here?
+                            self.popFormField = []
+
+                            messageText = "<br>The resource file path you have added to the Resource File Path field in the form appears to be a HEAL formatted results tracker. Attempting to extract file dependencies for each result in the results tracker now."
+                            errorFormat = '<span style="color:green;">{}</span>'
+                            self.userMessageBox.append(errorFormat.format(messageText))
                         
+                            resultsTrk = pd.read_csv(self.form.widget.state["path"])
+                            resultIds = resultsTrk["resultId"].tolist()
+
+                            if resultIds:
+
+                                # for each result id if multiple entries (due to editing the result entry) only keep the entry with the latest mod date
+                                print("de-duping result ids if necessary")
+                                resultsTrk["annotationModDateTime"] = pd.to_datetime(resultsTrk["annotationModDateTime"])
+
+                                #print(resultsTrk)
+                                print("start resultsTrk.columns: ",resultsTrk.columns)
+                                print("start resultsTrk.shape: ",resultsTrk.shape)
+
+                                resultsTrk = resultsTrk[resultsTrk["annotationModDateTime"] == (resultsTrk.groupby("resultId")["annotationModDateTime"].transform("max"))]
+                                print("finished de-duping result ids if necessary")
+                                #print(resultsTrk)
+                                print("end resultsTrk.columns: ",resultsTrk.columns)
+                                print("end resultsTrk.shape: ",resultsTrk.shape)
+
+                                resultIds = resultsTrk["resultId"].tolist()
+                                resultIdDependencies = resultsTrk["associatedFileDependsOn"].tolist()
+                                
+                                
+                                popFormField = [{"resultId": rId, "resultIdDependsOn": rIdD.strip("][").split(", ")} for rId,rIdD in zip(resultIds,resultIdDependencies)]
+                                print("popFormField: ", popFormField)
+
+                                messageText = "<br>Extracted file dependencies for each result in the results tracker are as follows:<br><br>"
+                                #errorFormat = '<span style="color:green;">{}</span>'
+                                #self.userMessageBox.append(errorFormat.format(messageText))
+                                self.userMessageBox.append(messageText)
+
+                                emptyDependencies = []
+                                formatDependencies = []
+                                for i, list_item in enumerate(popFormField):
+                                    self.userMessageBox.append(f"{i + 1}. ")
+                                    for j, key in enumerate(list_item.keys()):
+                                        self.userMessageBox.append(f"{key}:{list_item[key]}{'' if j == len(list_item) - 1 else ', '}")
+                                        if key == "resultId":
+                                            resultId = list_item[key]
+                                        if key == "resultIdDependsOn":
+                                            if not list_item[key]:
+                                                emptyDependencies.append(resultId)
+                                                print("emptyDependencies: ",emptyDependencies)
+                                                formatDependencies.append([])
+                                            else:
+                                                formatDependencies.append([item.replace("'", '') for item in list_item[key]])
+                                                
+                                    self.userMessageBox.append("")
+
+                                self.popFormField = [{"resultId": rId, "resultIdDependsOn": rIdD} for rId,rIdD in zip(resultIds,formatDependencies)]
+                                print("popFormField_format: ", self.popFormField)
+
+                                if emptyDependencies:
+                                    messageText = "<br>The following result IDs listed in the Results Tracker did not have any file dependencies listed:<br>" + ", ".join(emptyDependencies) + "<br><br>Please review your results tracker and add file dependencies for each result as appropriate, then come back and re-add the results tracker as a resource.<br><br>"
+                                    errorFormat = '<span style="color:red;">{}</span>'
+                                    self.userMessageBox.append(errorFormat.format(messageText))
+
+                                #self.form.widget.state = {
+                                #    "associatedFileResultsDependOn": popFormField
+                                #}
+                            
+                            else: 
+                                messageText = "<br>There do not appear to be any results listed in the Results Tracker. Please add at least one result to your Results Tracker by navigating to the Add Results sub-tab of the Results Tracker tab. If you have already annotated your result(s), use the Add result or Auto-add result button to add your result files to your Result Tracker. If you need to annotate your result(s), start by clicking the Annotate Result button, fill out the brief form that appears to annotate your result(s), use the Add or Auto-add Result button(s) to add your result file(s) to your Results Tracker, then come back here to re-add your Results Tracker as a resource.<br>"
+                                errorFormat = '<span style="color:red;">{}</span>'
+                                self.userMessageBox.append(errorFormat.format(messageText))
+                            
 
 
 
@@ -496,60 +558,116 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
 
         ################### hide fields that were revealed due to previous selection
 
+        
+            
         if self.form.widget.state["category"] != "tabular-data":
             self.toggle_widgets(keyText = "data", desiredToggleState = "hide")
             self.toggle_widgets(keyText = "tabular data", desiredToggleState = "hide")
             # delete contents of conditional fields if any added
-            self.form.widget.state = {
-                "descriptionRow": "",
-                "associatedFileDataDict": []
-            } 
+
+            # DO NOT do these items if loading from file (i.e. user is editing an existing annotation or adding a new annotation based on existing) 
+            if not self.loadingFormDataFromFile:
+                self.form.widget.state = {
+                    "descriptionRow": "",
+                    "associatedFileDataDict": []
+                } 
             
         if self.form.widget.state["category"] != "non-tabular-data":
             self.toggle_widgets(keyText = "data", desiredToggleState = "hide")
             
         if self.form.widget.state["category"] not in ["tabular-data","non-tabular-data"]:
             # delete contents of conditional fields if any added
-            self.form.widget.state = {
-                    "categorySubData": "",
-                    "associatedFileProtocol": []
-                } 
+
+            # DO NOT do these items if loading from file (i.e. user is editing an existing annotation or adding a new annotation based on existing) 
+            if not self.loadingFormDataFromFile:
+                self.form.widget.state = {
+                        "categorySubData": "",
+                        "associatedFileProtocol": []
+                    } 
         
         if self.form.widget.state["category"] != "metadata":
             self.toggle_widgets(keyText = "metadata", desiredToggleState = "hide")
             # delete contents of conditional fields if any added
-            self.form.widget.state = {
-                    "categorySubMetadata": ""
-                } 
 
-        if self.form.widget.state["category"] not in ["single-result","multi-result"]:
-            self.toggle_widgets(keyText = "results", desiredToggleState = "hide")
+            # DO NOT do these items if loading from file (i.e. user is editing an existing annotation or adding a new annotation based on existing) 
+            if not self.loadingFormDataFromFile:
+                self.form.widget.state = {
+                        "categorySubMetadata": ""
+                    } 
+
+        # if self.form.widget.state["category"] not in ["single-result","multi-result"]:
+        #     self.toggle_widgets(keyText = "results", desiredToggleState = "hide")
+        #     # delete contents of conditional fields if any added
+        #     self.form.widget.state = {
+        #             "categorySubResults": ""
+        #         } 
+
+        if self.form.widget.state["category"] != "result":
+            self.toggle_widgets(keyText = "result", desiredToggleState = "hide")
             # delete contents of conditional fields if any added
-            self.form.widget.state = {
-                    "categorySubResults": ""
-                } 
+            
+            # DO NOT do these items if loading from file (i.e. user is editing an existing annotation or adding a new annotation based on existing) 
+            if not self.loadingFormDataFromFile:
+                self.form.widget.state = {
+                        "categorySubResult": ""
+                    }
 
-        if self.form.widget.state["category"] != "multi-result":
-            self.toggle_widgets(keyText = "multi-result", desiredToggleState = "hide")
-            self.toggle_widgets(keyText = "not multi-result", desiredToggleState = "show")
-            self.form.widget.state = {
-                    "associatedFileResultsTracker": []
-                } 
+        if self.form.widget.state["category"] != "publication":
+            self.toggle_widgets(keyText = "publication", desiredToggleState = "hide")
+            # delete contents of conditional fields if any added
+            
+            # DO NOT do these items if loading from file (i.e. user is editing an existing annotation or adding a new annotation based on existing) 
+            if not self.loadingFormDataFromFile:
+                self.form.widget.state = {
+                        "categorySubPublication": ""
+                    }  
+
+        if self.form.widget.state["category"] != "publication":
+            self.toggle_widgets(keyText = "publication", desiredToggleState = "hide")
+            self.toggle_widgets(keyText = "not publication", desiredToggleState = "show")
+            
+            # DO NOT do these items if loading from file (i.e. user is editing an existing annotation or adding a new annotation based on existing) 
+            if not self.loadingFormDataFromFile:
+                self.form.widget.state = {
+                        "associatedFileResultsTracker": []
+                    } 
 
         if self.form.widget.state["category"] == "metadata":
             if self.form.widget.state["categorySubMetadata"] != "heal-formatted-results-tracker":
                 self.toggle_widgets(keyText = "not results-tracker", desiredToggleState = "show")
                 # clear associatedFileResultsDependOn field (not sure the format for this, is it a list of lists?)
-                self.popFormField = []
+                
+                # DO NOT do these items if loading from file (i.e. user is editing an existing annotation or adding a new annotation based on existing) 
+                if not self.loadingFormDataFromFile:
+                    self.popFormField = []
+            
+            if self.form.widget.state["categorySubMetadata"] != "other":
+                self.toggle_widgets(keyText = "subMetadataOther", desiredToggleState = "hide")
+                
+                # DO NOT do these items if loading from file (i.e. user is editing an existing annotation or adding a new annotation based on existing) 
+                if not self.loadingFormDataFromFile:
+                    self.form.widget.state = {
+                    "categorySubMetadataOther": ""
+                    } 
 
         if self.form.widget.state["category"] != "metadata":
             #if self.form.widget.state["categorySubMetadata"] == "heal-formatted-results-tracker":
-                self.toggle_widgets(keyText = "not results-tracker", desiredToggleState = "show")
+            self.toggle_widgets(keyText = "not results-tracker", desiredToggleState = "show")
+            
+            # DO NOT do these items if loading from file (i.e. user is editing an existing annotation or adding a new annotation based on existing) 
+            if not self.loadingFormDataFromFile:
                 self.form.widget.state = {
                     "categorySubMetadata": ""
                 } 
                 self.popFormField = []
-
+            
+            self.toggle_widgets(keyText = "subMetadataOther", desiredToggleState = "hide")
+            
+            # DO NOT do these items if loading from file (i.e. user is editing an existing annotation or adding a new annotation based on existing) 
+            if not self.loadingFormDataFromFile:
+                self.form.widget.state = {
+                    "categorySubMetadataOther": ""
+                } 
         ################### show field appropriate to current selection
             
         if self.form.widget.state["category"] == "tabular-data":
@@ -562,23 +680,30 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
         if self.form.widget.state["category"] == "metadata":
             self.toggle_widgets(keyText = "metadata", desiredToggleState = "show")
 
-        if self.form.widget.state["category"] in ["single-result","multi-result"]:
-            self.toggle_widgets(keyText = "results", desiredToggleState = "show")
+        # if self.form.widget.state["category"] in ["single-result","multi-result"]:
+        #     self.toggle_widgets(keyText = "results", desiredToggleState = "show")
+        if self.form.widget.state["category"] == "result":
+            self.toggle_widgets(keyText = "result", desiredToggleState = "show")
 
-        if self.form.widget.state["category"] == "multi-result":
-            self.toggle_widgets(keyText = "multi-result", desiredToggleState = "show")
-            self.toggle_widgets(keyText = "not multi-result", desiredToggleState = "hide")
+        if self.form.widget.state["category"] == "publication":
+            self.toggle_widgets(keyText = "publication", desiredToggleState = "show")
+
+        if self.form.widget.state["category"] == "publication":
+            self.toggle_widgets(keyText = "publication", desiredToggleState = "show")
+            self.toggle_widgets(keyText = "not publication", desiredToggleState = "hide")
 
         if self.form.widget.state["category"] == "metadata":
             if self.form.widget.state["categorySubMetadata"] == "heal-formatted-results-tracker":
                 self.toggle_widgets(keyText = "not results-tracker", desiredToggleState = "hide")
+            if self.form.widget.state["categorySubMetadata"] == "other":
+                self.toggle_widgets(keyText = "subMetadataOther", desiredToggleState = "show")
 
         #if changedFieldName == "access":
 
         if "temporary-private" in self.form.widget.state["access"]:
             self.toggle_widgets(keyText = "temporary private", desiredToggleState = "show")
             
-            messageText = "<br>You have indicated your resource will be temporarily held as private. Please 1) use the Access field to indicate the access level at which you'll set this resource once the temporary private access setting expires (either public access, or restricted access), and 2) use the Access Date field to indicate the date at which the temporary private access level is expected to expire (You will not be held to this date - Estimated dates are appreciated)."
+            messageText = "<br>You have indicated your resource will be temporarily held as private. Please 1) use the Access field to indicate the access level at which you'll set this resource once the temporary private access setting expires (either open-access access, or managed-access), and 2) use the Access Date field to indicate the date at which the temporary private access level is expected to expire (You will not be held to this date - Estimated dates are appreciated)."
             errorFormat = '<span style="color:blue;">{}</span>'
             self.userMessageBox.append(errorFormat.format(messageText))
 
@@ -793,11 +918,18 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
         print(len(self.items2))
 
         if self.items2:
-            #updatePath = self.items2[0]
+            
             updateAssocFileMultiDepend = self.items2
+            # if self.form.widget.state["associatedFileDependsOn"]:
+            #     updateAssocFileMultiDepend = self.items2 + 
+            # else: 
+            #     updateAssocFileMultiDepend = self.items2
         else:
-            #updatePath = ""
+            
             updateAssocFileMultiDepend = []
+
+
+        #list(pd.unique(students))
 
         self.form.widget.state = {
             #"path": updatePath,
@@ -952,6 +1084,23 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
             self.userMessageBox.append(errorFormat.format(messageText))
             return
 
+        if not os.path.isfile(self.form.widget.state["path"]):
+            messageText = "<br>The file path indicated in this form does not exist. You must enter a resource file path that exists before saving your resource file. Please check your resource file path, update the path indicated in the form if necessary, and then try saving again." 
+            errorFormat = '<span style="color:red;">{}</span>'
+            self.userMessageBox.append(errorFormat.format(messageText))
+            return
+
+        # if in edit mode then resource path should already exist in resource tracker; if not in edit mode the resource path should
+        # not yet exist in tracker
+        if self.mode != "edit":
+            addedResourcePathsList = dsc_pkg_utils.get_added_resource_paths(self=self)
+            if self.form.widget.state["path"] in addedResourcePathsList:
+                messageText = "<br>You have already added a resource to the Resource Tracker with the file path indicated in this form. You must add a unique resource file path before saving your resource file. Please check your resource file path, add a unique resource file path, and then try saving again. <b>If you meant to edit an existing resource</b>, you can do that by closing this window, then navigating to the \"Resource Tracker\" tab >> \"Add Resource\" sub-tab, and clicking the \"Edit an existing resource\" push-button. " 
+                errorFormat = '<span style="color:red;">{}</span>'
+                self.userMessageBox.append(errorFormat.format(messageText))
+                return
+
+
         # check that file path and at least a minimal description has been added to the form 
         # if not exit with informative error
         if not ((self.form.widget.state["path"]) and (self.form.widget.state["description"])):
@@ -1087,7 +1236,14 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
                 
                 resourceDependAllDf = pd.concat([resourceDependAllDf,resourceDependResultDependDf])
 
-            resourcesToAddOutputPath = os.path.join(self.workingDataPkgDir,"resources-to-add.csv")
+            resourcesToAddOutputDir = os.path.join(self.workingDataPkgDir,"no-user-access")
+            if not os.path.exists(resourcesToAddOutputDir):
+                os.makedirs(resourcesToAddOutputDir)
+                print("creating no-user-access subdirectory")
+            else:
+                print("no-user-access subdirectory already exists")
+            
+            resourcesToAddOutputPath = os.path.join(self.workingDataPkgDir,"no-user-access","resources-to-add.csv")
 
             # if not os.path.isfile(resourcesToAddOutputPath):
             #     f=open(resourcesToAddOutputPath,'w')
@@ -1098,6 +1254,9 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
                 # add timestamp at which time resource was added to the resources to add to tracker list
                 resourceDependAllDf["date-time"] = pd.Timestamp("now")
                 resourceDependAllDf["parent-resource-id"] = self.resource_id_list[0]
+                resourceDependAllDf["parent-resource-exp-name-belongs-to"] = self.form.widget.state["experimentNameBelongsTo"]
+                resourceDependAllDf["parent-resource-description"] = self.form.widget.state["description"]
+                resourceDependAllDf["parent-resource-path"] = self.form.widget.state["path"]
 
                 if os.path.isfile(resourcesToAddOutputPath):
 
@@ -1115,7 +1274,7 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
                     all_to_add_df = pd.read_csv(resourcesToAddOutputPath)
                     all_to_add_df["date-time"] = pd.to_datetime(all_to_add_df["date-time"])
                     all_to_add_df = pd.concat([all_to_add_df, resourceDependAllDf], axis=0) # this will be a row append with outer join on columns - will help accommodate any changes to fields/schema over time
-                    all_to_add_df.sort_values(by = ["date-time"], inplace=True)
+                    all_to_add_df.sort_values(by = ["date-time"], ascending=True, inplace=True)
                     # drop any exact duplicate rows
                     #all_df.drop_duplicates(inplace=True) # drop_duplicates does not work when df includes list vars
                     # this current approach does not appear to be working at the moment
@@ -1171,16 +1330,16 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
                     self.userMessageBox.moveCursor(QTextCursor.End)
 
             if "temporary-private" in self.form.widget.state["access"]:
-                if not any(map(lambda v: v in self.form.widget.state["access"], ["public","restricted-access"])):
+                if not any(map(lambda v: v in self.form.widget.state["access"], ["open-access","managed-access"])):
 
-                    messageText = "<br>WARNING: You indicated that this resource has an access level of \n'temporary-private\n' but did not indicate whether the access level would transition to \n'public\n' or to \n'restricted-access\n' once the temporary-private status expires. Please return to the form to indicate what the final access level of this resource will be by adding another value to the Access field on the form. Once you have done so, you can save again. You may need to delete the file that was just saved before saving again, as overwriting is not currently allowed."
+                    messageText = "<br>WARNING: You indicated that this resource has an access level of \n'temporary-private\n' but did not indicate whether the access level would transition to \n'open-access\n' or to \n'managed-access\n' once the temporary-private status expires. Please return to the form to indicate what the final access level of this resource will be by adding another value to the Access field on the form. Once you have done so, you can save again. You may need to delete the file that was just saved before saving again, as overwriting is not currently allowed."
                     saveFormat = '<span style="color:red;">{}</span>'
                     self.userMessageBox.append(saveFormat.format(messageText))
                     self.userMessageBox.moveCursor(QTextCursor.End)
 
                 if self.form.widget.state["accessDate"] == self.formDefaultState["accessDate"]:
 
-                    messageText = "<br>WARNING: You indicated that this resource has an access level of \n'temporary-private\n' but did not provide a date at which the temporary-private access level would transition from private to either \n'public\n' or to \n'restricted-access\n'. Please return to the form to indicate the date at which temporary-provate access level will expire in the Access Date field on the form. Once you have done so, you can save again. You may need to delete the file that was just saved before saving again, as overwriting is not currently allowed."
+                    messageText = "<br>WARNING: You indicated that this resource has an access level of \n'temporary-private\n' but did not provide a date at which the temporary-private access level would transition from private to either \n'open-access\n' or to \n'managed-access\n'. Please return to the form to indicate the date at which temporary-provate access level will expire in the Access Date field on the form. Once you have done so, you can save again. You may need to delete the file that was just saved before saving again, as overwriting is not currently allowed."
                     saveFormat = '<span style="color:red;">{}</span>'
                     self.userMessageBox.append(saveFormat.format(messageText))
                     self.userMessageBox.moveCursor(QTextCursor.End)
@@ -1376,17 +1535,19 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
                     res_m_timestamp = os.path.getmtime(data["path"])
                     res_m_datetime = datetime.datetime.fromtimestamp(res_m_timestamp).strftime("%Y-%m-%d, %H:%M:%S")
                     print("res_m_datetime: ", res_m_datetime)
+                
 
-                    add_to_df_dict = {#"resourceId":[resource_id],
-                                    "resourceIdNumber": [int(resIdNumStr)],  
-                                    #"resourceCreateDateTime": [res_c_datetime],
-                                    #"resourceModDateTime": [res_m_datetime],
-                                    "resource.mod.time.stamp": [res_m_timestamp],
-                                    #"annotationCreateDateTime": [restrk_c_datetime],
-                                    #"annotationModDateTime": [restrk_m_datetime],
-                                    "annotationModTimeStamp": [restrk_m_timestamp]}
 
-                    add_to_df = pd.DataFrame(add_to_df_dict)
+                    # add_to_df_dict = {#"resourceId":[resource_id],
+                    #                 "resourceIdNumber": [int(resIdNumStr)],  
+                    #                 #"resourceCreateDateTime": [res_c_datetime],
+                    #                 #"resourceModDateTime": [res_m_datetime],
+                    #                 "resourceModTimeStamp": [res_m_timestamp],
+                    #                 #"annotationCreateDateTime": [restrk_c_datetime],
+                    #                 #"annotationModDateTime": [restrk_m_datetime],
+                    #                 "annotationModTimeStamp": [restrk_m_timestamp]}
+
+                    # add_to_df = pd.DataFrame(add_to_df_dict)
 
                     # convert json to pd df
                     df = pd.json_normalize(data) # df is a one row dataframe
@@ -1395,8 +1556,11 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
                     df["annotationModDateTime"][0] = restrk_m_datetime
                     df["resourceCreateDateTime"][0] = res_c_datetime
                     df["resourceModDateTime"][0] = res_m_datetime
-                    df = pd.concat([df,add_to_df], axis = 1) # concatenate cols to df; still a one row dataframe
-                    print(df)
+                    df["resourceIdNumber"][0] = int(resIdNumStr)
+                    df["resourceModTimeStamp"][0] = res_m_timestamp
+                    df["annotationModTimeStamp"][0] = restrk_m_timestamp
+                    # df = pd.concat([df,add_to_df], axis = 1) # concatenate cols to df; still a one row dataframe
+                    # print(df)
 
                     collect_df = pd.concat([collect_df,df], axis=0) # add this files data to the dataframe that will collect data across all valid data files
                     print("collect_df rows: ", collect_df.shape[0])
@@ -1460,7 +1624,7 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
             self.userMessageBox.append(messageText)
             return
         
-    def clear_form(self):
+    def clear_form(self,resetForFormSetState=False):
 
         self.popFormField = []
 
@@ -1516,10 +1680,11 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
             saveFormat = '<span style="color:red;">{}</span>'
             self.userMessageBox.append(saveFormat.format(messageText))
 
-        messageText = "<br>Your form was successfully cleared and you can start annotating a new resource"
-        saveFormat = '<span style="color:green;">{}</span>'
-        self.userMessageBox.append(saveFormat.format(messageText))
-        self.userMessageBox.moveCursor(QTextCursor.End)
+        if not resetForFormSetState:
+            messageText = "<br>Your form was successfully cleared and you can start annotating a new resource"
+            saveFormat = '<span style="color:green;">{}</span>'
+            self.userMessageBox.append(saveFormat.format(messageText))
+            self.userMessageBox.moveCursor(QTextCursor.End)
 
         self.get_id()
 
@@ -1535,20 +1700,39 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
         # ifileName, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select the Resource Txt Data file you want to edit",
         #        (QtCore.QDir.homePath()), "Text (*.txt)")
 
-        ifileName, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select the Resource Txt Data file you want to edit",
-               self.saveFolderPath, "Text (*.txt)")
+        self.loadingFormDataFromFile = True
+        
+        if self.mode == "edit":
+            textBit = "edit"
+            textButton = "\"Edit an existing resource\""
+        elif self.mode == "add-based-on":
+            textBit = "base a new resource upon"
+            textButton = "\"Add a new resource based on an existing resource\""
+
+        
+        ifileName, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select the Resource txt file you want to " + textBit,
+            self.saveFolderPath, "Text (*.txt)")
 
         if not ifileName: 
-            messageText = "<br>You have not selected a file; returning."
+            messageText = "<br>You have not selected a file to " + textBit + ". Close this form now. If you still want to " + textBit + " an existing resource, Navigate to the \"Resource Tracker\" tab >> \"Add Resource\" sub-tab and click the " + textButton + " push-button."
             saveFormat = '<span style="color:red;">{}</span>'
             self.userMessageBox.append(saveFormat.format(messageText)) 
         else: 
             #self.editMode = True
                      
-            self.saveFilePath = ifileName
+            #self.saveFilePath = ifileName
             print("saveFilePath: ", self.saveFilePath)
             print(Path(ifileName).parent)
             print(Path(self.saveFolderPath))
+
+            # add check on if filename starts with resource-trk-resource?
+            if not Path(ifileName).stem.startswith("resource-trk-resource-"):
+                messageText = "<br>The file you selected may not be a resource txt file - a resource txt file will have a name that starts with \"resource-trk-resource-\" followed by a number which is that resource's ID number. You must select a resource txt file that is in your working Data Package Directory to proceed. <br><br> To proceed, close this form and return to the main DSC Data Packaging Tool window."
+                saveFormat = '<span style="color:red;">{}</span>'
+                self.userMessageBox.append(saveFormat.format(messageText))
+                return
+
+            # add check on if valid resource-trk file?
 
             # if user selects a resource txt file that is not in the working data pkg dir, return w informative message
             if Path(self.saveFolderPath) != Path(ifileName).parent:
@@ -1557,26 +1741,53 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
                 self.userMessageBox.append(saveFormat.format(messageText))
                 return
 
-            self.saveFolderPath = Path(ifileName).parent
+            # self.saveFolderPath = Path(ifileName).parent
             print("saveFolderPath: ", self.saveFolderPath)
             
             with open(ifileName, 'r') as stream:
                 data = load(stream)
 
-            self.resource_id = data["resourceId"]
-            self.resIdNum = int(self.resource_id.split("-")[1])
-            self.resourceFileName = 'resource-trk-'+ self.resource_id + '.txt'
-            #self.saveFilePath = os.path.join(self.saveFolderPath,self.resourceFileName)
+            if self.mode == "add-based-on":
+                based_on_annotation_id = data["resourceId"]
 
-            # make sure an archive folder exists, if not create it
-            if not os.path.exists(os.path.join(self.saveFolderPath,"archive")):
-                os.makedirs(os.path.join(self.saveFolderPath,"archive"))
+            if self.mode == "edit": 
+                self.saveFilePath = ifileName # is this necessary?
+                print("setting saveFilePath to path of chosen file")
+                
+                self.resource_id = data["resourceId"]
+                self.resIdNum = int(self.resource_id.split("-")[1])
+                self.resourceFileName = 'resource-trk-'+ self.resource_id + '.txt'
+                #self.saveFilePath = os.path.join(self.saveFolderPath,self.resourceFileName)
 
-            # move the resource annotation file user opened for editing to archive folder
-            os.rename(ifileName,os.path.join(self.saveFolderPath,"archive",self.resourceFileName))
-            messageText = "<br>Your original resource annotation file has been archived at:<br>" + os.path.join(self.saveFolderPath,"archive",self.resourceFileName) + "<br><br>"
-            saveFormat = '<span style="color:blue;">{}</span>'
-            self.userMessageBox.append(saveFormat.format(messageText))
+                # # make sure an archive folder exists, if not create it
+                # if not os.path.exists(os.path.join(self.saveFolderPath,"archive")):
+                #     os.makedirs(os.path.join(self.saveFolderPath,"archive"))
+
+                archiveFileStartsWith = Path(ifileName).stem + "-"
+                print("archiveFileStartsWith: ",archiveFileStartsWith)
+
+                # make sure an archive folder exists, if not create it
+                if not os.path.exists(os.path.join(self.saveFolderPath,"archive")):
+                    os.makedirs(os.path.join(self.saveFolderPath,"archive"))
+                    # if an archive folder does not yet exist prior to this, then this will 
+                    # necessarily be the first time the user is editing an annotation file
+                    self.annotationArchiveFileNameNumber = 1
+                    #self.annotationArchiveFileName = 'exp-trk-'+ self.annotation_id + '-0' + '.txt'
+                else: 
+                    print("checking if at least one archived version/file for this annotation txt file already exists; getting next available archive id")
+                    # check for files that start with stem of ifileName
+                    # get the string that follows the last hyphen in the stem of those files, convert that string to number
+                    # get highest number, add 1 to that number
+                    self.annotationArchiveFileNameNumber = dsc_pkg_utils.get_id(self=self, prefix=archiveFileStartsWith, folderPath=os.path.join(self.saveFolderPath,"archive"), firstIdNum=1)
+                
+                #self.annotationArchiveFileName = 'exp-trk-'+ self.annotation_id + '-' + str(self.annotationArchiveFileNameNumber) + '.txt'    
+                self.annotationArchiveFileName = archiveFileStartsWith + str(self.annotationArchiveFileNameNumber) + '.txt'  
+
+                # move the resource annotation file user opened for editing to archive folder
+                os.rename(ifileName,os.path.join(self.saveFolderPath,"archive",self.annotationArchiveFileName))
+                messageText = "<br>Your original resource annotation file has been archived at:<br>" + os.path.join(self.saveFolderPath,"archive",self.annotationArchiveFileName) + "<br><br>"
+                saveFormat = '<span style="color:blue;">{}</span>'
+                self.userMessageBox.append(saveFormat.format(messageText))
 
             if data["associatedFileResultsDependOn"]:
                 self.popFormField = data.pop("associatedFileResultsDependOn")
@@ -1591,6 +1802,14 @@ class ScrollAnnotateResourceWindow(QtWidgets.QMainWindow):
             if len(data["associatedFileDependsOn"]) > 2: 
                 self.lstbox_view2.addItems(data["associatedFileDependsOn"])
                 self.add_multi_depend()
+
+            if self.mode == "add-based-on":
+                self.get_id()
+                messageText = "<br>Your new resource has been initialized based on information you entered for " + based_on_annotation_id + "<br><br>"
+                saveFormat = '<span style="color:blue;">{}</span>'
+                self.userMessageBox.append(saveFormat.format(messageText))
+
+        self.loadingFormDataFromFile = False
 
     def take_inputs(self):
 

@@ -16,6 +16,7 @@ from layout_resourcetrkaddwidget import ResourceTrkAddWindow
 from layout_infotextwidget import InfoTextWindow
 from layout_csvviewpushtoloadwidget import CSVViewPushToLoadWindow
 #from layout_csvpushtoloadwidget import CSVPushToLoadWindow
+from layout_resourcetrkresourcestoaddwidget import ResourcesToAddWindow
 
 class ResourceTrkTabsWindow(QWidget):
     def __init__(self, workingDataPkgDirDisplay):
@@ -31,14 +32,15 @@ class ResourceTrkTabsWindow(QWidget):
         
         
         # Create the tab widget with two tabs
-        tabs = QTabWidget()
-        tabs.addTab(InfoTextWindow(self.infoText), "Info")
-        tabs.addTab(ResourceTrkAddWindow(workingDataPkgDirDisplay=self.workingDataPkgDirDisplay), "Add Resource")
-        tabs.addTab(CSVViewPushToLoadWindow(workingDataPkgDirDisplay=self.workingDataPkgDirDisplay,fileBaseName="heal-csv-resource-tracker.csv",fileStartsWith="", fileTypeTitle="Resource Tracker"), "View Tracker")
+        self.tabs = QTabWidget()
+        self.tabs.addTab(InfoTextWindow(self.infoText), "Info")
+        self.tabs.addTab(ResourceTrkAddWindow(workingDataPkgDirDisplay=self.workingDataPkgDirDisplay), "Add Resource")
+        self.tabs.addTab(ResourcesToAddWindow(workingDataPkgDirDisplay=self.workingDataPkgDirDisplay), "Check Resources To Add")
+        self.tabs.addTab(CSVViewPushToLoadWindow(workingDataPkgDirDisplay=self.workingDataPkgDirDisplay,fileBaseName="heal-csv-resource-tracker.csv",fileStartsWith="", fileTypeTitle="Resource Tracker"), "View Tracker")
         
         
                 
-        layout.addWidget(tabs)
+        layout.addWidget(self.tabs)
 
     
 

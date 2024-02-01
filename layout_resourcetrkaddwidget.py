@@ -39,6 +39,7 @@ class ResourceTrkAddWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.w = None  # No external window yet.
         self.workingDataPkgDirDisplay = workingDataPkgDirDisplay
+        self.schemaVersion = schema_resource_tracker["version"]
         
         widget = QtWidgets.QWidget()
         
@@ -47,6 +48,9 @@ class ResourceTrkAddWindow(QtWidgets.QMainWindow):
 
         self.buttonEditResource = QtWidgets.QPushButton(text="Edit an existing resource",parent=self)
         self.buttonEditResource.clicked.connect(self.edit_resource)
+
+        self.buttonAddBasedOnResource = QtWidgets.QPushButton(text="Add a new resource based on an existing resource",parent=self)
+        self.buttonAddBasedOnResource.clicked.connect(self.annotate_resource_based_on)
 
         self.buttonAddResource = QtWidgets.QPushButton(text="Batch add existing resource(s) to tracker",parent=self)
         self.buttonAddResource.clicked.connect(self.add_resource)
@@ -61,6 +65,7 @@ class ResourceTrkAddWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout()
 
         advanced_layout = QtWidgets.QVBoxLayout()
+        advanced_layout.addWidget(self.buttonAddBasedOnResource)
         advanced_layout.addWidget(self.buttonAddResource)
         advanced_groupbox = QtWidgets.QGroupBox("Advanced")
         advanced_groupbox.setLayout(advanced_layout)
@@ -81,6 +86,13 @@ class ResourceTrkAddWindow(QtWidgets.QMainWindow):
         if not dsc_pkg_utils.getWorkingDataPkgDir(self=self):
             return
 
+        # check self.schemaVersion against version in operational schema version file 
+        # if no operational schema version file exists OR 
+        # if version in operational schema version file is less than self.schemaVersion 
+        # return with message that update of tracker version is needed before new annotations can be added
+        if not dsc_pkg_utils.checkTrackerCreatedSchemaVersionAgainstCurrent(self=self,trackerTypeFileNameString="resource-tracker",trackerTypeMessageString="Resource Tracker"):
+            return
+
         # experiment tracker is needed to populate the enum of experimentNameBelongsTo schema property so perform some checks
 
         # check that experiment tracker exists in working data pkg dir, if not, return
@@ -95,10 +107,10 @@ class ResourceTrkAddWindow(QtWidgets.QMainWindow):
             with open(os.path.join(self.workingDataPkgDir,"heal-csv-experiment-tracker.csv"),'r+') as f:
                 print("file is closed, proceed!!")
         except PermissionError:
-                messageText = "<br>The Experiment Tracker file in your working Data Package Directory is open in another application, and must be closed to proceed; Check if the Experiment Tracker file is open in Excel or similar application, and close the file. <br>"
-                saveFormat = '<span style="color:red;">{}</span>'
-                self.userMessageBox.append(saveFormat.format(messageText))
-                return
+            messageText = "<br>The Experiment Tracker file in your working Data Package Directory is open in another application, and must be closed to proceed; Check if the Experiment Tracker file is open in Excel or similar application, and close the file. <br>"
+            saveFormat = '<span style="color:red;">{}</span>'
+            self.userMessageBox.append(saveFormat.format(messageText))
+            return
         
         # form will only be opened if a valid working data pkg dir is set, and that dir will be passed to the form widget
         if self.w is None:
@@ -116,6 +128,13 @@ class ResourceTrkAddWindow(QtWidgets.QMainWindow):
         if not dsc_pkg_utils.getWorkingDataPkgDir(self=self):
             return
 
+        # check self.schemaVersion against version in operational schema version file 
+        # if no operational schema version file exists OR 
+        # if version in operational schema version file is less than self.schemaVersion 
+        # return with message that update of tracker version is needed before new annotations can be added
+        if not dsc_pkg_utils.checkTrackerCreatedSchemaVersionAgainstCurrent(self=self,trackerTypeFileNameString="resource-tracker",trackerTypeMessageString="Resource Tracker"):
+            return
+
         # experiment tracker is needed to populate the enum of experimentNameBelongsTo schema property so perform some checks
 
         # check that experiment tracker exists in working data pkg dir, if not, return
@@ -130,10 +149,10 @@ class ResourceTrkAddWindow(QtWidgets.QMainWindow):
             with open(os.path.join(self.workingDataPkgDir,"heal-csv-experiment-tracker.csv"),'r+') as f:
                 print("file is closed, proceed!!")
         except PermissionError:
-                messageText = "<br>The Experiment Tracker file in your working Data Package Directory is open in another application, and must be closed to proceed; Check if the Experiment Tracker file is open in Excel or similar application, and close the file. <br>"
-                saveFormat = '<span style="color:red;">{}</span>'
-                self.userMessageBox.append(saveFormat.format(messageText))
-                return
+            messageText = "<br>The Experiment Tracker file in your working Data Package Directory is open in another application, and must be closed to proceed; Check if the Experiment Tracker file is open in Excel or similar application, and close the file. <br>"
+            saveFormat = '<span style="color:red;">{}</span>'
+            self.userMessageBox.append(saveFormat.format(messageText))
+            return
         
         # form will only be opened if a valid working data pkg dir is set, and that dir will be passed to the form widget
         if self.w is None:
@@ -147,12 +166,62 @@ class ResourceTrkAddWindow(QtWidgets.QMainWindow):
             self.w.close()  # Close window.
             self.w = None  # Discard reference.
 
+    def annotate_resource_based_on(self,checked):
+
+        # check if user has set a working data package dir - if not exit gracefully with informative message
+        if not dsc_pkg_utils.getWorkingDataPkgDir(self=self):
+            return
+
+        # check self.schemaVersion against version in operational schema version file 
+        # if no operational schema version file exists OR 
+        # if version in operational schema version file is less than self.schemaVersion 
+        # return with message that update of tracker version is needed before new annotations can be added
+        if not dsc_pkg_utils.checkTrackerCreatedSchemaVersionAgainstCurrent(self=self,trackerTypeFileNameString="resource-tracker",trackerTypeMessageString="Resource Tracker"):
+            return
+
+        # experiment tracker is needed to populate the enum of experimentNameBelongsTo schema property so perform some checks
+
+        # check that experiment tracker exists in working data pkg dir, if not, return
+        if not os.path.exists(os.path.join(self.workingDataPkgDir,"heal-csv-experiment-tracker.csv")):
+            messageText = "<br>There is no Experiment Tracker file in your working Data Package Directory; Your working Data Package Directory must contain an Experiment Tracker file to proceed. If you need to change your working Data Package Directory or create a new one, head to the \"Data Package\" tab >> \"Create or Continue Data Package\" sub-tab to set a new working Data Package Directory or create a new one. <br>"
+            saveFormat = '<span style="color:red;">{}</span>'
+            self.userMessageBox.append(saveFormat.format(messageText))
+            return
+        
+        # check that experiment tracker is closed (user doesn't have it open in excel for example)
+        try: 
+            with open(os.path.join(self.workingDataPkgDir,"heal-csv-experiment-tracker.csv"),'r+') as f:
+                print("file is closed, proceed!!")
+        except PermissionError:
+            messageText = "<br>The Experiment Tracker file in your working Data Package Directory is open in another application, and must be closed to proceed; Check if the Experiment Tracker file is open in Excel or similar application, and close the file. <br>"
+            saveFormat = '<span style="color:red;">{}</span>'
+            self.userMessageBox.append(saveFormat.format(messageText))
+            return
+
+        # form will only be opened if a valid working data pkg dir is set, and that dir will be passed to the form widget
+        if self.w is None:
+            #self.w.editState = True
+            self.w = ScrollAnnotateResourceWindow(workingDataPkgDirDisplay=self.workingDataPkgDirDisplay, workingDataPkgDir=self.workingDataPkgDir, mode="add-based-on")
+            self.w.show()
+            self.w.load_file()
+
+        else:
+            self.w.close()  # Close window.
+            self.w = None  # Discard reference.
+
     def add_resource(self):
 
         # check if user has set a working data package dir - if not exit gracefully with informative message
         if not dsc_pkg_utils.getWorkingDataPkgDir(self=self):
             return
 
+        # check self.schemaVersion against version in operational schema version file 
+        # if no operational schema version file exists OR 
+        # if version in operational schema version file is less than self.schemaVersion 
+        # return with message that update of tracker version is needed before new annotations can be added
+        if not dsc_pkg_utils.checkTrackerCreatedSchemaVersionAgainstCurrent(self=self,trackerTypeFileNameString="resource-tracker",trackerTypeMessageString="Resource Tracker"):
+            return
+            
         # experiment tracker is needed to populate the enum of experimentNameBelongsTo schema property (in this case for validation purposes) so perform some checks
 
         # check that experiment tracker exists in working data pkg dir, if not, return
@@ -167,10 +236,10 @@ class ResourceTrkAddWindow(QtWidgets.QMainWindow):
             with open(os.path.join(self.workingDataPkgDir,"heal-csv-experiment-tracker.csv"),'r+') as f:
                 print("file is closed, proceed!!")
         except PermissionError:
-                messageText = "<br>The Experiment Tracker file in your working Data Package Directory is open in another application, and must be closed to proceed; Check if the Experiment Tracker file is open in Excel or similar application, and close the file. <br>"
-                saveFormat = '<span style="color:red;">{}</span>'
-                self.userMessageBox.append(saveFormat.format(messageText))
-                return
+            messageText = "<br>The Experiment Tracker file in your working Data Package Directory is open in another application, and must be closed to proceed; Check if the Experiment Tracker file is open in Excel or similar application, and close the file. <br>"
+            saveFormat = '<span style="color:red;">{}</span>'
+            self.userMessageBox.append(saveFormat.format(messageText))
+            return
 
         # check that resource tracker exists in working data pkg dir, if not, return
         if not os.path.exists(os.path.join(self.workingDataPkgDir,"heal-csv-resource-tracker.csv")):
@@ -359,16 +428,16 @@ class ResourceTrkAddWindow(QtWidgets.QMainWindow):
                     res_m_datetime = datetime.datetime.fromtimestamp(res_m_timestamp).strftime("%Y-%m-%d, %H:%M:%S")
                     print("res_m_datetime: ", res_m_datetime)
 
-                    add_to_df_dict = {#"resourceId":[resource_id],
-                                    "resourceIdNumber": [int(resIdNumStr)],  
-                                    #"resourceCreateDateTime": [res_c_datetime],
-                                    #"resourceModDateTime": [res_m_datetime],
-                                    "resource.mod.time.stamp": [res_m_timestamp],
-                                    #"annotationCreateDateTime": [restrk_c_datetime],
-                                    #"annotationModDateTime": [restrk_m_datetime],
-                                    "annotationModTimeStamp": [restrk_m_timestamp]}
+                    # add_to_df_dict = {#"resourceId":[resource_id],
+                    #                 "resourceIdNumber": [int(resIdNumStr)],  
+                    #                 #"resourceCreateDateTime": [res_c_datetime],
+                    #                 #"resourceModDateTime": [res_m_datetime],
+                    #                 "resourceModTimeStamp": [res_m_timestamp],
+                    #                 #"annotationCreateDateTime": [restrk_c_datetime],
+                    #                 #"annotationModDateTime": [restrk_m_datetime],
+                    #                 "annotationModTimeStamp": [restrk_m_timestamp]}
 
-                    add_to_df = pd.DataFrame(add_to_df_dict)
+                    # add_to_df = pd.DataFrame(add_to_df_dict)
 
                     # convert json to pd df
                     df = pd.json_normalize(data) # df is a one row dataframe
@@ -377,8 +446,11 @@ class ResourceTrkAddWindow(QtWidgets.QMainWindow):
                     df["annotationModDateTime"][0] = restrk_m_datetime
                     df["resourceCreateDateTime"][0] = res_c_datetime
                     df["resourceModDateTime"][0] = res_m_datetime
-                    df = pd.concat([df,add_to_df], axis = 1) # concatenate cols to df; still a one row dataframe
-                    print(df)
+                    df["resourceIdNumber"][0] = int(resIdNumStr)
+                    df["resourceModTimeStamp"][0] = res_m_timestamp
+                    df["annotationModTimeStamp"][0] = restrk_m_timestamp
+                    # df = pd.concat([df,add_to_df], axis = 1) # concatenate cols to df; still a one row dataframe
+                    # print(df)
 
                     collect_df = pd.concat([collect_df,df], axis=0) # add this files data to the dataframe that will collect data across all valid data files
                     print("collect_df rows: ", collect_df.shape[0])

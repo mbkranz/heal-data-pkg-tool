@@ -32,6 +32,8 @@ from schema_results_tracker import schema_results_tracker
 from healdata_utils.validators.jsonschema import validate_against_jsonschema
 import datetime
 
+from packaging import version
+
 
 class ResultsTrkAddWindow(QtWidgets.QMainWindow):
 
@@ -39,6 +41,7 @@ class ResultsTrkAddWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.w = None  # No external window yet.
         self.workingDataPkgDirDisplay = workingDataPkgDirDisplay
+        self.schemaVersion = schema_results_tracker["version"]
         
         widget = QtWidgets.QWidget()
         
@@ -50,6 +53,8 @@ class ResultsTrkAddWindow(QtWidgets.QMainWindow):
 
         # self.buttonAddResult = QtWidgets.QPushButton(text="Add result to tracker",parent=self)
         # self.buttonAddResult.clicked.connect(self.add_result)
+        self.buttonAddBasedOnResult = QtWidgets.QPushButton(text="Add a new result based on an existing result",parent=self)
+        self.buttonAddBasedOnResult.clicked.connect(self.annotate_result_based_on)
 
         self.buttonAutoAddResult = QtWidgets.QPushButton(text="Batch add existing result(s) to tracker",parent=self)
         self.buttonAutoAddResult.clicked.connect(self.auto_add_result)
@@ -62,6 +67,7 @@ class ResultsTrkAddWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout()
 
         advanced_layout = QtWidgets.QVBoxLayout()
+        advanced_layout.addWidget(self.buttonAddBasedOnResult)
         advanced_layout.addWidget(self.buttonAutoAddResult)
         advanced_groupbox = QtWidgets.QGroupBox("Advanced")
         advanced_groupbox.setLayout(advanced_layout)
@@ -98,6 +104,42 @@ class ResultsTrkAddWindow(QtWidgets.QMainWindow):
         if not dsc_pkg_utils.getWorkingDataPkgDir(self=self):
             return
 
+        
+        # check self.schemaVersion against version in operational schema version file 
+        # if no operational schema version file exists OR 
+        # if version in operational schema version file is less than self.schemaVersion 
+        # return with message that update of tracker version is needed before new annotations can be added
+        if not dsc_pkg_utils.checkTrackerCreatedSchemaVersionAgainstCurrent(self=self,trackerTypeFileNameString="results-tracker",trackerTypeMessageString="Results Tracker"):
+            return
+
+        # operationalFileSubDir = os.path.join(self.workingDataPkgDir,"no-user-access")
+        # trackerCreatedSchemaVersionFile = os.path.join(operationalFileSubDir,"schema-version-results-tracker.csv")
+        # if os.isdir(operationalFileSubDir):
+        #     if os.isfile(trackerCreatedSchemaVersionFile):
+        #         trackerCreatedSchemaVersion = dsc_pkg_utils.read_last_line_txt_file(trackerCreatedSchemaVersionFile)
+        #     else:
+        #         trackerCreatedSchemaVersion = "0.1.0" # not necessarily accurate, just indicating that it's not up to date
+        # else: 
+        #     trackerCreatedSchemaVersion = "0.1.0" # not necessarily accurate, just indicating that it's not up to date
+
+        # trackerCreatedSchemaVersionParse = version.parse(trackerCreatedSchemaVersion)
+        # currentTrackerVersionParse = version.parse(self.schemaVersion)
+
+        # if trackerCreatedSchemaVersionParse != currentTrackerVersionParse:
+        #     if trackerCreatedSchemaVersionParse < currentTrackerVersionParse:
+        #         messageText = "<br>The Results Tracker file in your working Data Package Directory was created under an outdated schema version. Update of tracker version is needed before new annotations can be added. Head to the \"Data Package\" tab >> \"Audit & Update\" sub-tab to update, then come back and try again. <br>"
+        #         saveFormat = '<span style="color:red;">{}</span>'
+        #         self.userMessageBox.append(saveFormat.format(messageText))
+        #         return
+        #     else:
+        #         messageText = "<br>It appears that The Results Tracker file in your working Data Package Directory was created under a schema version that is later than the current schema version. Something is not right. Please reach out to the DSC team for help. <br>"
+        #         saveFormat = '<span style="color:red;">{}</span>'
+        #         self.userMessageBox.append(saveFormat.format(messageText))
+        #         return
+
+
+         
+
         # experiment tracker is needed to populate the enum of experimentNameBelongsTo schema property (in this case for validation purposes) so perform some checks
 
         # check that experiment tracker exists in working data pkg dir, if not, return
@@ -112,10 +154,10 @@ class ResultsTrkAddWindow(QtWidgets.QMainWindow):
             with open(os.path.join(self.workingDataPkgDir,"heal-csv-experiment-tracker.csv"),'r+') as f:
                 print("file is closed, proceed!!")
         except PermissionError:
-                messageText = "<br>The Experiment Tracker file in your working Data Package Directory is open in another application, and must be closed to proceed; Check if the Experiment Tracker file is open in Excel or similar application, and close the file. <br>"
-                saveFormat = '<span style="color:red;">{}</span>'
-                self.userMessageBox.append(saveFormat.format(messageText))
-                return
+            messageText = "<br>The Experiment Tracker file in your working Data Package Directory is open in another application, and must be closed to proceed; Check if the Experiment Tracker file is open in Excel or similar application, and close the file. <br>"
+            saveFormat = '<span style="color:red;">{}</span>'
+            self.userMessageBox.append(saveFormat.format(messageText))
+            return
         
         # form will only be opened if a valid working data pkg dir is set, and that dir will be passed to the form widget
         if self.w is None:
@@ -132,6 +174,13 @@ class ResultsTrkAddWindow(QtWidgets.QMainWindow):
         if not dsc_pkg_utils.getWorkingDataPkgDir(self=self):
             return
 
+        # check self.schemaVersion against version in operational schema version file 
+        # if no operational schema version file exists OR 
+        # if version in operational schema version file is less than self.schemaVersion 
+        # return with message that update of tracker version is needed before new annotations can be added
+        if not dsc_pkg_utils.checkTrackerCreatedSchemaVersionAgainstCurrent(self=self,trackerTypeFileNameString="results-tracker",trackerTypeMessageString="Results Tracker"):
+            return
+
         # experiment tracker is needed to populate the enum of experimentNameBelongsTo schema property (in this case for validation purposes) so perform some checks
 
         # check that experiment tracker exists in working data pkg dir, if not, return
@@ -146,10 +195,10 @@ class ResultsTrkAddWindow(QtWidgets.QMainWindow):
             with open(os.path.join(self.workingDataPkgDir,"heal-csv-experiment-tracker.csv"),'r+') as f:
                 print("file is closed, proceed!!")
         except PermissionError:
-                messageText = "<br>The Experiment Tracker file in your working Data Package Directory is open in another application, and must be closed to proceed; Check if the Experiment Tracker file is open in Excel or similar application, and close the file. <br>"
-                saveFormat = '<span style="color:red;">{}</span>'
-                self.userMessageBox.append(saveFormat.format(messageText))
-                return
+            messageText = "<br>The Experiment Tracker file in your working Data Package Directory is open in another application, and must be closed to proceed; Check if the Experiment Tracker file is open in Excel or similar application, and close the file. <br>"
+            saveFormat = '<span style="color:red;">{}</span>'
+            self.userMessageBox.append(saveFormat.format(messageText))
+            return
 
         # form will only be opened if a valid working data pkg dir is set, and that dir will be passed to the form widget
         if self.w is None:
@@ -162,6 +211,49 @@ class ResultsTrkAddWindow(QtWidgets.QMainWindow):
             self.w.close()  # Close window.
             self.w = None  # Discard reference.
     
+    def annotate_result_based_on(self,checked):
+
+        # check if user has set a working data package dir - if not exit gracefully with informative message
+        if not dsc_pkg_utils.getWorkingDataPkgDir(self=self):
+            return
+
+        # check self.schemaVersion against version in operational schema version file 
+        # if no operational schema version file exists OR 
+        # if version in operational schema version file is less than self.schemaVersion 
+        # return with message that update of tracker version is needed before new annotations can be added
+        if not dsc_pkg_utils.checkTrackerCreatedSchemaVersionAgainstCurrent(self=self,trackerTypeFileNameString="results-tracker",trackerTypeMessageString="Results Tracker"):
+            return
+
+        # experiment tracker is needed to populate the enum of experimentNameBelongsTo schema property so perform some checks
+
+        # check that experiment tracker exists in working data pkg dir, if not, return
+        if not os.path.exists(os.path.join(self.workingDataPkgDir,"heal-csv-experiment-tracker.csv")):
+            messageText = "<br>There is no Experiment Tracker file in your working Data Package Directory; Your working Data Package Directory must contain an Experiment Tracker file to proceed. If you need to change your working Data Package Directory or create a new one, head to the \"Data Package\" tab >> \"Create or Continue Data Package\" sub-tab to set a new working Data Package Directory or create a new one. <br>"
+            saveFormat = '<span style="color:red;">{}</span>'
+            self.userMessageBox.append(saveFormat.format(messageText))
+            return
+        
+        # check that experiment tracker is closed (user doesn't have it open in excel for example)
+        try: 
+            with open(os.path.join(self.workingDataPkgDir,"heal-csv-experiment-tracker.csv"),'r+') as f:
+                print("file is closed, proceed!!")
+        except PermissionError:
+            messageText = "<br>The Experiment Tracker file in your working Data Package Directory is open in another application, and must be closed to proceed; Check if the Experiment Tracker file is open in Excel or similar application, and close the file. <br>"
+            saveFormat = '<span style="color:red;">{}</span>'
+            self.userMessageBox.append(saveFormat.format(messageText))
+            return
+
+        # form will only be opened if a valid working data pkg dir is set, and that dir will be passed to the form widget
+        if self.w is None:
+            #self.w.editState = True
+            self.w = ScrollAnnotateResultWindow(workingDataPkgDirDisplay=self.workingDataPkgDirDisplay, workingDataPkgDir=self.workingDataPkgDir, mode="add-based-on")
+            self.w.show()
+            self.w.load_file()
+
+        else:
+            self.w.close()  # Close window.
+            self.w = None  # Discard reference.
+
     # def add_result(self):
 
     #     # not updated to use working data package dir as set in data package tab as this function is currently not in use
@@ -355,6 +447,13 @@ class ResultsTrkAddWindow(QtWidgets.QMainWindow):
         if not dsc_pkg_utils.getWorkingDataPkgDir(self=self):
             return
 
+        # check self.schemaVersion against version in operational schema version file 
+        # if no operational schema version file exists OR 
+        # if version in operational schema version file is less than self.schemaVersion 
+        # return with message that update of tracker version is needed before new annotations can be added
+        if not dsc_pkg_utils.checkTrackerCreatedSchemaVersionAgainstCurrent(self=self,trackerTypeFileNameString="experiment-tracker",trackerTypeMessageString="Experiment Tracker"):
+            return
+            
         # experiment tracker is needed to populate the enum of experimentNameBelongsTo schema property (in this case for validation purposes) so perform some checks
 
         # check that experiment tracker exists in working data pkg dir, if not, return
@@ -369,10 +468,10 @@ class ResultsTrkAddWindow(QtWidgets.QMainWindow):
             with open(os.path.join(self.workingDataPkgDir,"heal-csv-experiment-tracker.csv"),'r+') as f:
                 print("file is closed, proceed!!")
         except PermissionError:
-                messageText = "<br>The Experiment Tracker file in your working Data Package Directory is open in another application, and must be closed to proceed; Check if the Experiment Tracker file is open in Excel or similar application, and close the file. <br>"
-                saveFormat = '<span style="color:red;">{}</span>'
-                self.userMessageBox.append(saveFormat.format(messageText))
-                return
+            messageText = "<br>The Experiment Tracker file in your working Data Package Directory is open in another application, and must be closed to proceed; Check if the Experiment Tracker file is open in Excel or similar application, and close the file. <br>"
+            saveFormat = '<span style="color:red;">{}</span>'
+            self.userMessageBox.append(saveFormat.format(messageText))
+            return
 
         # don't check for results tracker exists as this function checks for appropriate trackers already existing and creates the needed results tracker(s) if they don't already exist
         # # check that resource tracker exists in working data pkg dir, if not, return
@@ -442,7 +541,7 @@ class ResultsTrkAddWindow(QtWidgets.QMainWindow):
             self.schema = schema_results_tracker
 
             self.experimentNameList = []
-            self.experimentNameList, _ = dsc_pkg_utils.get_exp_names(self=self) # gets self.experimentNameList
+            self.experimentNameList, _ = dsc_pkg_utils.get_exp_names(self=self,perResource=False) # gets self.experimentNameList
             print("self.experimentNameList: ",self.experimentNameList)
             if self.experimentNameList:
                 #self.schema = self.add_exp_names_to_schema() # uses self.experimentNameList and self.schema to update schema property experimentNameBelongs to be an enum with values equal to experimentNameList
@@ -532,23 +631,25 @@ class ResultsTrkAddWindow(QtWidgets.QMainWindow):
                     restrk_m_datetime = datetime.datetime.fromtimestamp(restrk_m_timestamp).strftime("%Y-%m-%d, %H:%M:%S")
                     print("restrk_m_datetime: ", restrk_m_datetime)
 
-                    add_to_df_dict = {#"resultId":[resource_id],
-                                    "resultIdNumber": [int(IdNumStr)],  
-                                    #"annotationCreateDateTime": [restrk_c_datetime],
-                                    #"annotationModDateTime": [restrk_m_datetime],
-                                    "annotationModTimeStamp": [restrk_m_timestamp]}
+                    # add_to_df_dict = {#"resultId":[resource_id],
+                    #                 "resultIdNumber": [int(IdNumStr)],  
+                    #                 #"annotationCreateDateTime": [restrk_c_datetime],
+                    #                 #"annotationModDateTime": [restrk_m_datetime],
+                    #                 "annotationModTimeStamp": [restrk_m_timestamp]}
 
 
-                    add_to_df = pd.DataFrame(add_to_df_dict)
+                    # add_to_df = pd.DataFrame(add_to_df_dict)
 
                     # convert json to pd df
                     df = pd.json_normalize(data) # df is a one row dataframe
                     print(df)
                     df["annotationCreateDateTime"][0] = restrk_c_datetime
                     df["annotationModDateTime"][0] = restrk_m_datetime
+                    df["resultIdNumber"][0] = int(IdNumStr)
+                    df["annotationModTimeStamp"][0] = restrk_m_timestamp
                     print(df)
-                    df = pd.concat([df,add_to_df], axis = 1) # concatenate cols to df; still a one row dataframe
-                    print(df)
+                    # df = pd.concat([df,add_to_df], axis = 1) # concatenate cols to df; still a one row dataframe
+                    # print(df)
 
                     collect_df = pd.concat([collect_df,df], axis=0) # add this files data to the dataframe that will collect data across all valid data files
                     print("collect_df rows: ", collect_df.shape[0])
