@@ -36,6 +36,7 @@ jobs:
         name: Add version number to app title
         run: |
 
+          git pull
           git checkout -b tmp
           version="${GITHUB_REF_NAME}"
           title_with_version="${APP_TITLE} ${version}"
@@ -49,9 +50,10 @@ jobs:
           git add dsc_pkg_tool.py
           git commit -m "Automated update of app title to ${version}"
 
+          git fetch origin $TAG_BRANCH
           git checkout $TAG_BRANCH
           git merge tmp
-          git push -u origin
+          git push -u origin $TAG_BRANCH
           
 
   release:
