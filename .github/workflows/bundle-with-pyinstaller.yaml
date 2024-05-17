@@ -52,7 +52,7 @@ jobs:
 
           git fetch origin $TAG_BRANCH
           git checkout $TAG_BRANCH
-          git merge tmp
+          git merge tmp --allow-unrelated-histories
           git push -u origin $TAG_BRANCH
           
 
