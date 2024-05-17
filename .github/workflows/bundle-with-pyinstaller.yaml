@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
   
 env:
-  TAG_BRANCH: tag-${{ github.ref_name }} # branch where the version-specific code is. See note below when this var is called
+  TAG_BRANCH: tag-${{ github.ref_name }}-${{ github.sha }} # branch where the version-specific code is. See note below when this var is called
   APP_TITLE: DSC Data Packaging Tool - alpha - #prefix for the title to be displayed in the app
 jobs:
   tag_version:
