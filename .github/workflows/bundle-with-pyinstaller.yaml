@@ -39,18 +39,17 @@ jobs:
           git config user.email ${{ github.triggering_actor }}@users.noreply.github.com
 
           git pull
+          git checkout -b ${GITHUB_REF_NAME}
+
           version="${GITHUB_REF_NAME}"
           title_with_version="${APP_TITLE} ${version}"
           echo $title_with_version
           # replace the window title
           sed -i -e "s/self.setWindowTitle(.*)/self.setWindowTitle(\"${title_with_version}\")/g" dsc_pkg_tool.py
-          git stash
-          git checkout $TAG_BRANCH
-          git stash pop
-          git status
+
           git add dsc_pkg_tool.py
           git commit -m "Automated update of app title to ${version}"
-          git push -u origin $TAG_BRANCH
+          git push -u origin
           
 
   release:
@@ -86,7 +85,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
       with:
-        ref: ${{ env.TAG_BRANCH }}
+        ref: ${{ github.ref_name }}
     - name: Set up Python
       uses: actions/setup-python@v3
       with:
