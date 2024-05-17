@@ -35,23 +35,21 @@ jobs:
       - id: title_in_version
         name: Add version number to app title
         run: |
+          git config user.name ${{ github.triggering_actor }}
+          git config user.email ${{ github.triggering_actor }}@users.noreply.github.com
 
           git pull
-          git checkout -b tmp
           version="${GITHUB_REF_NAME}"
           title_with_version="${APP_TITLE} ${version}"
           echo $title_with_version
           # replace the window title
           sed -i -e "s/self.setWindowTitle(.*)/self.setWindowTitle(\"${title_with_version}\")/g" dsc_pkg_tool.py
-
-          git config user.name ${{ github.triggering_actor }}
-          git config user.email ${{ github.triggering_actor }}@users.noreply.github.com
+          git stash
+          git checkout $TAG_BRANCH
+          git stash apply
 
           git add dsc_pkg_tool.py
           git commit -m "Automated update of app title to ${version}"
-
-          git fetch origin $TAG_BRANCH
-          git checkout $TAG_BRANCH
           git merge tmp --allow-unrelated-histories
           git push -u origin $TAG_BRANCH
           
