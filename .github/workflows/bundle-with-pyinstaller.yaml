@@ -48,7 +48,7 @@ jobs:
 
           git add dsc_pkg_tool.py
           git commit -m "Automated update of app title to ${version}"
-          git push -u origin
+          git push -u origin ${GITHUB_REF_NAME}
           
 
   release:
