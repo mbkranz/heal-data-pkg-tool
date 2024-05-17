@@ -46,8 +46,8 @@ jobs:
           sed -i -e "s/self.setWindowTitle(.*)/self.setWindowTitle(\"${title_with_version}\")/g" dsc_pkg_tool.py
           git stash
           git checkout $TAG_BRANCH
-          git stash apply
-
+          git stash pop
+          git status
           git add dsc_pkg_tool.py
           git commit -m "Automated update of app title to ${version}"
           git push -u origin $TAG_BRANCH
