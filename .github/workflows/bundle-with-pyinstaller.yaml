@@ -50,7 +50,6 @@ jobs:
 
           git add dsc_pkg_tool.py
           git commit -m "Automated update of app title to ${version}"
-          git merge tmp --allow-unrelated-histories
           git push -u origin $TAG_BRANCH
           
 
