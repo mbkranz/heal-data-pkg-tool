@@ -46,7 +46,7 @@ jobs:
 
           git add dsc_pkg_tool.py
           git commit -m "Automated update of app title to ${version}"
-          git push -u origin $TAG_BRANCH
+          git push -u origin HEAD:$TAG_BRANCH
           
 
   release:
